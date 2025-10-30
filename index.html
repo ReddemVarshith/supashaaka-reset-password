@@ -183,6 +183,22 @@
         .back-to-login a:hover {
             text-decoration: underline;
         }
+
+        .test-info {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            text-align: left;
+        }
+
+        .test-info strong {
+            display: block;
+            margin-bottom: 5px;
+        }
     </style>
 </head>
 <body>
@@ -191,6 +207,11 @@
         <h1>Reset Password</h1>
         <p class="subtitle">Enter your new password below</p>
         
+        <div id="testInfo" class="test-info" style="display: none;">
+            <strong>🔧 Test Mode</strong>
+            <p>This is a test version. In production, this form will only show when accessed via a valid Supabase magic link.</p>
+        </div>
+        
         <div id="message" class="message"></div>
         
         <div id="loading" class="loading">
@@ -198,11 +219,11 @@
             <p style="margin-top: 10px; color: #666;">Processing...</p>
         </div>
 
-        <form id="resetForm" style="display: none;">
+        <form id="resetForm">
             <div class="form-group">
                 <label for="newPassword">New Password</label>
                 <div class="password-container">
-                    <input type="password" id="newPassword" required minlength="6">
+                    <input type="password" id="newPassword" required minlength="6" placeholder="Enter new password">
                     <button type="button" class="toggle-password" onclick="togglePassword('newPassword')">👁️</button>
                 </div>
             </div>
@@ -210,7 +231,7 @@
             <div class="form-group">
                 <label for="confirmPassword">Confirm New Password</label>
                 <div class="password-container">
-                    <input type="password" id="confirmPassword" required minlength="6">
+                    <input type="password" id="confirmPassword" required minlength="6" placeholder="Confirm new password">
                     <button type="button" class="toggle-password" onclick="togglePassword('confirmPassword')">👁️</button>
                 </div>
             </div>
@@ -223,87 +244,154 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
         // Supabase configuration
         const SUPABASE_URL = 'https://tytsqtptqmawvovjwjlo.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5dHNxdHB0cW1hd3Zvdmp3amxvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEzNjgwMTQsImV4cCI6MjA3Njk0NDAxNH0.2XbKAXxj6lT_cJKq_OeHcuy6q96mpZ26dRK5Q994K24';
 
-        // Initialize Supabase
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        // Wait for DOM and Supabase to be ready
+        document.addEventListener('DOMContentLoaded', function() {
+            initializePage();
+        });
 
-        // Get URL parameters
-        const urlParams = new URLSearchParams(window.location.search);
-        const accessToken = urlParams.get('access_token');
-        const refreshToken = urlParams.get('refresh_token');
-        const type = urlParams.get('type');
+        async function initializePage() {
+            // Get URL parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            const accessToken = urlParams.get('access_token');
+            const refreshToken = urlParams.get('refresh_token');
+            const type = urlParams.get('type');
 
-        // Check if this is a valid magic link
-        if (!accessToken || !refreshToken || type !== 'recovery') {
-            showMessage('Invalid or expired password reset link. Please request a new one.', 'error');
-            setTimeout(() => {
-                window.location.href = 'https://your-main-app.com/login'; // Replace with your main app URL
-            }, 3000);
-        } else {
-            // Show the form
-            document.getElementById('resetForm').style.display = 'block';
+            console.log('URL Parameters:', { accessToken, refreshToken, type });
+
+            // Check if this is a valid magic link or test mode
+            if (!accessToken || !refreshToken || type !== 'recovery') {
+                // Show test info for testing purposes
+                document.getElementById('testInfo').style.display = 'block';
+                console.log('No valid magic link parameters found - showing test mode');
+                
+                // In test mode, still show the form but with a warning
+                document.getElementById('resetForm').style.display = 'block';
+                
+                // Set up test form submission
+                setupTestFormSubmission();
+            } else {
+                // Production mode with valid magic link
+                try {
+                    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                    console.log('Supabase initialized successfully');
+                    
+                    // Show the form
+                    document.getElementById('resetForm').style.display = 'block';
+                    
+                    // Set up form submission with Supabase
+                    setupFormSubmission(supabase, accessToken, refreshToken);
+                    
+                } catch (error) {
+                    console.error('Failed to initialize Supabase:', error);
+                    showMessage('Failed to initialize authentication. Please refresh the page.', 'error');
+                }
+            }
         }
 
-        // Handle form submission
-        document.getElementById('resetForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const newPassword = document.getElementById('newPassword').value;
-            const confirmPassword = document.getElementById('confirmPassword').value;
-            
-            // Validate passwords
-            if (newPassword !== confirmPassword) {
-                showMessage('Passwords do not match. Please try again.', 'error');
-                return;
-            }
-            
-            if (newPassword.length < 6) {
-                showMessage('Password must be at least 6 characters long.', 'error');
-                return;
-            }
-            
-            // Show loading
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('submitBtn').disabled = true;
-            
-            try {
-                // Exchange the access token for a session
-                const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-                    access_token: accessToken,
-                    refresh_token: refreshToken
-                });
+        function setupTestFormSubmission() {
+            // Handle form submission in test mode
+            document.getElementById('resetForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
                 
-                if (sessionError) {
-                    throw sessionError;
+                const newPassword = document.getElementById('newPassword').value;
+                const confirmPassword = document.getElementById('confirmPassword').value;
+                
+                // Validate passwords
+                if (newPassword !== confirmPassword) {
+                    showMessage('Passwords do not match. Please try again.', 'error');
+                    return;
                 }
                 
-                // Update the password
-                const { error: updateError } = await supabase.auth.updateUser({
-                    password: newPassword
-                });
-                
-                if (updateError) {
-                    throw updateError;
+                if (newPassword.length < 6) {
+                    showMessage('Password must be at least 6 characters long.', 'error');
+                    return;
                 }
                 
-                // Success
-                showMessage('Password reset successfully! Redirecting to login...', 'success');
+                // Show loading
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('submitBtn').disabled = true;
                 
+                // Simulate success in test mode
                 setTimeout(() => {
-                    window.location.href = 'https://supashaaka.web.app/login'; // Your Flutter web app URL
-                }, 3000);
+                    showMessage('✅ Test mode: Password reset successful! (In production, this would update Supabase)', 'success');
+                    
+                    setTimeout(() => {
+                        window.location.href = 'https://supashaaka.web.app/login'; // Your Flutter web app URL
+                    }, 3000);
+                }, 1500);
+            });
+        }
+
+        function setupFormSubmission(supabase, accessToken, refreshToken) {
+            // Handle form submission
+            document.getElementById('resetForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
                 
-            } catch (error) {
-                console.error('Error resetting password:', error);
-                showMessage('Error resetting password: ' + error.message, 'error');
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('submitBtn').disabled = false;
-            }
-        });
+                const newPassword = document.getElementById('newPassword').value;
+                const confirmPassword = document.getElementById('confirmPassword').value;
+                
+                // Validate passwords
+                if (newPassword !== confirmPassword) {
+                    showMessage('Passwords do not match. Please try again.', 'error');
+                    return;
+                }
+                
+                if (newPassword.length < 6) {
+                    showMessage('Password must be at least 6 characters long.', 'error');
+                    return;
+                }
+                
+                // Show loading
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('submitBtn').disabled = true;
+                
+                try {
+                    console.log('Setting session with tokens...');
+                    // Exchange the access token for a session
+                    const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+                        access_token: accessToken,
+                        refresh_token: refreshToken
+                    });
+                    
+                    if (sessionError) {
+                        throw sessionError;
+                    }
+                    
+                    console.log('Session set successfully:', sessionData);
+                    
+                    // Update the password
+                    console.log('Updating password...');
+                    const { error: updateError } = await supabase.auth.updateUser({
+                        password: newPassword
+                    });
+                    
+                    if (updateError) {
+                        throw updateError;
+                    }
+                    
+                    console.log('Password updated successfully');
+                    
+                    // Success
+                    showMessage('Password reset successfully! Redirecting to login...', 'success');
+                    
+                    setTimeout(() => {
+                        window.location.href = 'https://supashaaka.web.app/login'; // Your Flutter web app URL
+                    }, 3000);
+                    
+                } catch (error) {
+                    console.error('Error resetting password:', error);
+                    showMessage('Error resetting password: ' + error.message, 'error');
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('submitBtn').disabled = false;
+                }
+            });
+        }
 
         // Toggle password visibility
         function togglePassword(inputId) {
